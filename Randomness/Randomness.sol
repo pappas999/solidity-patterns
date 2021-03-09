@@ -1,38 +1,57 @@
 // This code has not been professionally audited, therefore I cannot make any promises about
 // safety or correctness. Use at own risk.
 
-pragma solidity ^0.4.22;
+pragma solidity 0.6.6;
 
-contract Randomness {
+import "https://raw.githubusercontent.com/smartcontractkit/chainlink/master/evm-contracts/src/v0.6/VRFConsumerBase.sol";
 
-    bytes32 sealedSeed;
-    bool seedSet = false;
-    bool betsClosed = false;
-    uint storedBlockNumber;
-    address trustedParty = 0xdCad3a6d3569DF655070DEd06cb7A1b2Ccd1D3AF;
-
-    function setSealedSeed(bytes32 _sealedSeed) public {
-        require(!seedSet);
-        require (msg.sender == trustedParty);
-        betsClosed = true;
-        sealedSeed = _sealedSeed;
-        storedBlockNumber = block.number + 1;
-        seedSet = true;
+contract RandomNumberConsumer is VRFConsumerBase {
+    
+    bytes32 internal keyHash;
+    uint256 internal fee;
+    
+    uint256 public randomResult;
+    
+    /**
+     * Constructor inherits VRFConsumerBase
+     * 
+     * Network: Kovan
+     * Chainlink VRF Coordinator address: 0xdD3782915140c8f3b190B5D67eAc6dc5760C46E9
+     * LINK token address:                0xa36085F69e2889c224210F603D836748e7dC0088
+     * Key Hash: 0x6c3699283bda56ad74f6b855546325b68d482e983852a7a82979cc4807b641f4
+     */
+    constructor() 
+        VRFConsumerBase(
+            0xdD3782915140c8f3b190B5D67eAc6dc5760C46E9, // VRF Coordinator
+            0xa36085F69e2889c224210F603D836748e7dC0088  // LINK Token
+        ) public
+    {
+        keyHash = 0x6c3699283bda56ad74f6b855546325b68d482e983852a7a82979cc4807b641f4;
+        fee = 0.1 * 10 ** 18; // 0.1 LINK
+    }
+    
+    /** 
+     * Requests randomness from a user-provided seed
+     */
+    function getRandomNumber(uint256 userProvidedSeed) public returns (bytes32 requestId) {
+        require(LINK.balanceOf(address(this)) > fee, "Not enough LINK - fill contract with faucet");
+        return requestRandomness(keyHash, fee, userProvidedSeed);
     }
 
-    function bet() public {
-        require(!betsClosed);
-        // Make bets here
+    /**
+     * Callback function used by VRF Coordinator
+     */
+    function fulfillRandomness(bytes32 requestId, uint256 randomness) internal override {
+        randomResult = randomness;
     }
-
-    function reveal(bytes32 _seed) public {
-        require(seedSet);
-        require(betsClosed);
-        require(storedBlockNumber < block.number);
-        require(keccak256(msg.sender, _seed) == sealedSeed);
-        uint random = uint(keccak256(_seed, blockhash(storedBlockNumber)));
-        // Insert logic for usage of random number here;
-        seedSet = false;
-        betsClosed = false;
+    
+    /**
+     * Withdraw LINK from this contract
+     * 
+     * DO NOT USE THIS IN PRODUCTION AS IT CAN BE CALLED BY ANY ADDRESS.
+     * THIS IS PURELY FOR EXAMPLE PURPOSES.
+     */
+    function withdrawLink() external {
+        require(LINK.transfer(msg.sender, LINK.balanceOf(address(this))), "Unable to transfer");
     }
 }
