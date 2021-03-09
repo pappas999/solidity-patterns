@@ -7,76 +7,139 @@ Gain access to data stored outside of the blockchain.
 ## Motivation
 Every computation on the Ethereum blockchain has to be validated by every participating node in the network. It would not be practical to allow for any kind of external network requests from a contract, since every node would have to make that request on their own to verify its result. Not only would this lead to excessive network usage, which smaller sites could possibly not handle, also a change in the requested information would break the consensus algorithm. Contracts on the blockchain itself are therefore not able to communicate with the outside world, meaning they cannot pull information from sources like the internet. But for many contracts, information about external events is necessary to fulfill their core purpose, especially since the industry is looking for more complex use cases. There are already contracts that rely on information about the result of a sport event, the price of a currency or the status of a flight. One of the first solutions to overcome this limitation was [Orisi](https://github.com/orisi/wiki/wiki/Orisi-White-Paper), a service published in 2014, with the aim of being an intermediary between the Bitcoin blockchain and the outside world. Since then several services for different blockchains with similar concepts have emerged under the term oracle. The oracle acts as an agent living on the blockchain and providing information in the form of responses to queries.
 
-An important point when handling data in the context of a blockchain is the notion of trust. As there is no central authority, trust has to be built from concepts like immutability and a working consensus algorithm. When relying on externally introduced information it is necessary to find a way to build up trust for that information as well. 
+An important point when handling data in the context of a blockchain is the notion of trust. As there is no central authority, trust has to be built from concepts like immutability and a working consensus algorithm. When relying on externally introduced information it is necessary to find a way to build up trust for that information as well. This concept is known as [the oracle problem](https://blog.chain.link/what-is-the-blockchain-oracle-problem/#:~:text=The%20oracle%20problem%20revolves%20around,computer%20with%20no%20Internet%20connection), and one of the most common ways of building up this trust is to obtain data from multiple sources using a decentralized oracle network.
 
 ## Applicability
 
 Use the Oracle pattern when
 * you rely on information that can not be provided from within the blockchain.
-* you trust the provider of the necessary information. 
 
 ## Participants & Collaborations
 
-The oracle pattern consists of three entities: the contract requesting information, the oracle and the data source. The process begins with a contract requesting information, which he cannot retrieve from within the blockchain. Therefore a transaction is sent to the oracle contract, which lives on the blockchain as well. This transaction contains a request that the contract wishes to be fulfilled. Optional parameters can be the desired data source, or a certain time in the future, at which the answer should be delivered.
+The oracle pattern consists of three entities: the contract requesting information, the oracle(s) and the data source(s). The process begins with a contract requesting information, which they cannot retrieve from within the blockchain. Therefore a transaction is sent to an oracle contract, which lives on the blockchain as well. This transaction contains a request that the contract wishes to be fulfilled. A good example is a contract requesting the current price of Ether.
 
-Afterwards the oracle forwards the request to the agreed data source. Because the data source is off-chain, this communication is not conducted via blockchain transactions, but through other forms of digital communication.
+The oracle is essentially a program running off-chain that acts as a bridge between the outside world and the blockchain. An oracle then picks up this request from the on-chain oracle contract, and then forwards the request to the agreed data source. Because the data source is off-chain, this communication is not conducted via blockchain transactions, but through other forms of digital communication, usually via HTTP requests.
 
-When the request reaches the data source it is processed and the reply is sent back to the oracle. From there on the oracle either sends it back to the requesting contact or waits until the time stated in the request. The initial contract receives the data via a function call in which the contract can then execute any logic on the data.
+When the request reaches the data source, it is processed and the reply is sent back to the oracle. From there on the oracle then sends the response back to the initial calling contract via the on-chain oracle contract. Once this is complete, the initial calling contract can then perform any logic required using the obtained result.
 
 ## Implementation
 
-In this section we will only focus on the implementation of the pattern in the requesting contract. The implementation of the oracle itself is done mainly off-chain and is therefore not covered here. There are several resources on the internet that cover how to implement your own oracle customized for the needs of your smart contract and your business model. However, people thinking about interacting with your contract might be turned away by seeing that self-provided data is being used for the execution of contract logic. They would have to trust the contract creator, who in this scenario is the same entity as the oracle operator, to not manipulate the data on the way from the data-source to the contract. This reintroduces the need for trust, which we try to get rid of by using a blockchain.
+Chainlink oracles have become the preferred oracle solution for smart contracts looking to obtain external data, thanks to their quick and easy implementation, as well as their flexibility & scalability. In this section we'll focus on the implentation of the pattern in the requesting contracts, and leave all of the off-chain logic and processing to a chainlink oracle. Another example of an oracle service is [Town Crier](http://www.town-crier.org/), which also works with trusted compute hardware.
 
-The more commonly used alternative to this is using an independent service as an oracles. The market leader in this domain at this point is the British company [Oraclize](https://docs.oraclize.it/). Other oracle services are for example [Town Crier](http://www.town-crier.org/), working with trusted hardware, or [Reality Keys](https://www.realitykeys.com/).
+To make a simple API request, the requesting contract simply needs to import and implement the ChainlinkClient contract, set a few contructor variables, and then provide a method for requesting data, and one to receive data. The contructor sets the following values:
+1. Sets the LINK token contract to the address of the LINK token for the given network. 
+2. Sets the oracle contract address to send the request to 
+3. Sets the jobId to a job running on a Chainlink oracle on the given network to process the request
+4. Sets the required fee to be send in LINK to the oracle to fulfill the request
 
-Whether or not the oracle is self implemented or an external service is used, it is necessary for the requesting contract to implement at least two methods:
-1. The first method assembles a query to let the oracle know which data is requested and sends it in a transaction to the oracle contract. Depending on the implementation of the oracle additional parameters can be added to the request. It is common, that the oracle returns an ID that can be stored for future reference.
-2. The second method is a so called callback function. This is the function called by the oracle contract to deliver the result of the query. The callback function either stores the result of the query or triggers any internal logic. The incoming calls can be associated by the ID returned in the first method. It makes sense to include a check in the callback function to make sure that only the oracle is able to call it. Otherwise a malicious entity could provide wrong information to do harm or benefit from it.
+More information on each value can be found in the [Chainlink documentation](https://docs.chain.link/docs/make-a-http-get-request#config)
+
+The next part of the code is the requesting function, in this case `requestVolumeData()`. This function does the following:
+1. Builds up a request to send to a Chainlink oracle, containing the URL, JSON path to traverse to obtain the result, which method to call in this contract when it has a result, and tells the node to convert the result to account for decimals.
+2. Sends the request to the given oracle contract.
+
+Once the oracle has retrieved a response, it will call the specified function in our calling contract, passing the result. In this case it's the `fulfill` function, which receives the result and stores it in the smart contract in the volume variable.
 
 ## Sample Code
 
-As the service Oraclize is used in almost every case an oracle is needed, the following sample will showcase the code needed to interact with the Oraclize oracle to receive the current EUR to USD exchange rate. Other oracles are integrated in a similar fashion. Information about the accurate syntax needed can be found in the respective documentation.
+In this example below we'll obtain the current volume of the ETH/USD pair on the cryptocompare API using a Chainlink oracle running on the Ethereum Kovan testnet. Before you can make a request by calling the `requestVolumeData` function, you need to [fund your contract with some LINK](https://docs.chain.link/docs/fund-your-contract)
 
 ```Solidity
 // This code has not been professionally audited, therefore I cannot make any promises about
 // safety or correctness. Use at own risk.
-import "github.com/oraclize/ethereum-api/oraclizeAPI.sol";
+pragma solidity ^0.6.0;
 
-contract OracleExample is usingOraclize {
+import "https://raw.githubusercontent.com/smartcontractkit/chainlink/develop/evm-contracts/src/v0.6/ChainlinkClient.sol";
 
-    string public EURUSD;
-
-    function updatePrice() public payable {
-        if (oraclize_getPrice("URL") > this.balance) {
-            //Handle out of funds error
-        } else {
-            oraclize_query("URL", "json(http://api.fixer.io/latest?symbols=USD).rates.USD");
-        }
+contract APIConsumer is ChainlinkClient {
+  
+    uint256 public volume;
+    
+    address private oracle;
+    bytes32 private jobId;
+    uint256 private fee;
+    
+    /**
+     * Network: Kovan
+     * Chainlink - 0x2f90A6D021db21e1B2A077c5a37B3C7E75D15b7e
+     * Chainlink - 29fa9aa13bf1468788b7cc4a500a45b8
+     * Fee: 0.1 LINK
+     */
+    constructor() public {
+        setPublicChainlinkToken();
+        oracle = 0x2f90A6D021db21e1B2A077c5a37B3C7E75D15b7e;
+        jobId = "29fa9aa13bf1468788b7cc4a500a45b8";
+        fee = 0.1 * 10 ** 18; // 0.1 LINK
     }
     
-    function __callback(bytes32 myid, string result) public {
-        require(msg.sender == oraclize_cbAddress());
-        EURUSD = result;
+    /**
+     * Create a Chainlink request to retrieve API response, find the target
+     * data, then multiply by 1000000000000000000 (to remove decimal places from data).
+     */
+    function requestVolumeData() public returns (bytes32 requestId) 
+    {
+        Chainlink.Request memory request = buildChainlinkRequest(jobId, address(this), this.fulfill.selector);
+        
+        // Set the URL to perform the GET request on
+        request.add("get", "https://min-api.cryptocompare.com/data/pricemultifull?fsyms=ETH&tsyms=USD");
+        
+        // Set the path to find the desired data in the API response, where the response format is:
+        // {"RAW":
+        //      {"ETH":
+        //          {"USD":
+        //              {
+        //                  ...,
+        //                  "VOLUME24HOUR": xxx.xxx,
+        //                  ...
+        //              }
+        //          }
+        //      }
+        //  }
+        request.add("path", "RAW.ETH.USD.VOLUME24HOUR");
+        
+        // Multiply the result by 1000000000000000000 to remove decimals
+        int timesAmount = 10**18;
+        request.addInt("times", timesAmount);
+        
+        // Sends the request
+        return sendChainlinkRequestTo(oracle, request, fee);
+    }
+    
+    /**
+     * Receive the response in the form of uint256
+     */ 
+    function fulfill(bytes32 _requestId, uint256 _volume) public recordChainlinkFulfillment(_requestId)
+    {
+        volume = _volume;
+    }
+    
+    /**
+     * Withdraw LINK from this contract
+     * 
+     * NOTE: DO NOT USE THIS IN PRODUCTION AS IT CAN BE CALLED BY ANY ADDRESS.
+     * THIS IS PURELY FOR EXAMPLE PURPOSES ONLY.
+     */
+    function withdrawLink() external {
+        LinkTokenInterface linkToken = LinkTokenInterface(chainlinkTokenAddress());
+        require(linkToken.transfer(msg.sender, linkToken.balanceOf(address(this))), "Unable to transfer");
     }
 }
 ```
 
-In line 2 the API of Oraclize is imported from GitHub. In case the compiler is not supporting the direct import from sources like GitHub it is necessary to replace the import statement with a local import of the API. The API is needed to give access to addresses and the functions needed to interact with the oracle. In line 4 it is specified that the contract inherits from the API by using the keyword `is`. The function `updatePrice()` is sending out the query to the oracle. The `payable` modifier is used, which allows the transaction to have a value (some amount of Ether) attached. This is necessary because the usage of the Oraclize service is not for free. The applying rates can be found in the [Oraclize documentation](https://docs.oraclize.it/). Line 9 asserts that the contract has sufficient funds to pay for the service. If this is not the case the user should be notified, for example by triggering an event. If the balance is sufficient, the query is sent to the Oraclize contract in line 12. The first parameter tells the oracle that we want to query a URL while the second parameter contains the URL of the API and the part of the response JSON object we are interested in, namely the USD value. Any API on the internet can be accessed by this way.
-
-The `__callback(bytes32 myid, string result)` function is used by the oracle to send the result to the contract. The first paramter `myid` could have been saved in the first function and now be used to link the result to a previous request. Line 17 makes sure the calling entity is indeed the oracle. The result is then saved to storage in line 18.
-
 ## Consequences
 
-The most important consequences of applying the oracle pattern is gaining access to data otherwise not being available on the blockchain, and therefore allowing business models and use cases with whole new functionality. Besides providing arbitrary data from the web, oracles can be used to automatically trigger a function at a specified time in the future, by providing a time delay parameter in the query. This can solve the often encountered problem of how to schedule function calls on a blockchain. It is also often used for generating random numbers, a difficult task, as described in the [Randomness pattern](./randomness.md). From a developer standpoint it is fairly easy to implement the oracle pattern, especially when using one of the already existing services. Another benefit of using an existing solution is the fact that these solutions are heavily audited, reducing the risk of errors.
+The most important consequences of applying the oracle pattern is gaining access to data otherwise not being available on the blockchain, and therefore allowing business models and use cases with whole new functionality. Besides providing arbitrary data from the web, oracles can be used to automatically trigger functionality in other systems, such as payment procesors or enterprise systems. It is also often used for generating random numbers, a difficult task, as described in the [Randomness pattern](./randomness.md). From a developer standpoint it is fairly easy to implement the oracle pattern, especially when using one of the already existing services such as [Chainlink](http://chain.link). Another benefit of using an existing solution is the fact that these solutions are heavily audited, reducing the risk of errors.
 
-A negative consequence of the usage of oracles is the introduction of a single point of failure. The contract creator as well as the users interacting with the contract rely heavily on the information provided by the oracle. Oracles or their data sources have reported wrong data in the past and it is likely that there will be errors in the future again. Not only errors but even small changes in the form of the provided data can break a smart contract like it happened in a [case published on reddit](https://www.reddit.com/r/ethtrader/comments/6w5wcn/important_update_mayweathermcgregor_smart_contract/). A data source changed the formatting of its outputs for a boxing fight from lowercase to uppercase characters, which the immutable smart contract could not handle anymore. Another negative consequence is the trust that has to be put into both, oracles and data sources. In an environment that strives towards decentralization, relying on a single external entity seems contradictory. This issue could potentially be mitigated by forwarding the request to a couple of independent oracles. The results would then be compared and evaluated. A possible strategy could be using M independent oracles and only accepting a result reported by at least N (with N < M) of the M agents.  A drawback of this approach is the cost that increases with every additional oracle. Also the time it takes to come to a conclusion is increasing in most of the cases, since you will have to wait for at least N responses. Another method of mitigating trust from the oracles is beeing used at Oraclize: [TLSNotary proofs](https://tlsnotary.org/). Using TLSNotary, Oraclize can prove that they visited the specified website at a certain time and indeed recieved the provided result. While this would not prevent Oraclize from querying random numbers until they get the desired result, it is trustworthy in case the requested data does not fluctuate over small periods of time.
+A negative consequence of the usage of oracles is the introduction of an additional point of failure. The contract creator as well as the users interacting with the contract rely heavily on the information provided by oracles. Oracles or their data sources have reported wrong data in the past and it is likely that there will be errors in the future again. 
 
-Further trust issues could be resolved in the future with the adoption of decentralized oracles, on which a lot of work is done during the time of writing. 
+Another negative consequence is the trust that has to be put into both, oracles and data sources. In an environment that strives towards decentralization, relying on a single external entity seems contradictory. This issue can be mitigated by using multiple oracle nodes and multiple data sources, thereby extending the security and tamper proof properties out to the oracle layer. The results could then be compared and evaluated or aggregated This is how [Chainlink Price Feeds](https://data.chain.link/) are implemented, and have proven to be a battle tested secure way of bringing price data on-chain.
+
+Another method of mitigating trust from the oracles is beeing used at Oraclize: [TLSNotary proofs](https://tlsnotary.org/). Using TLSNotary, Oraclize can prove that they visited the specified website at a certain time and indeed recieved the provided result. While this would not prevent Oraclize from querying random numbers until they get the desired result, it is trustworthy in case the requested data does not fluctuate over small periods of time.
 
 ## Known Uses
  
-Usage of the oracle pattern can be observed in a variety of contracts on the blockchain. An example using the service Oraclize is the contract of [Etherisc](https://github.com/etherisc/flightDelay/blob/master/contracts/FlightDelayPayout.sol) where the oracle is used to get access to flight delay data. The contract then pays out insurance to their users in case of a delayed flight.
+Usage of the oracle pattern can be observed in a variety of contracts on the blockchain. An example using Chainlink Oracles is decentralied finance protocol [Aave](https://github.com/aave), which uses Chainlink Price Feeds to obtain external price data from multiple sources and multiple oracles. 
 
-Another oracle implementation can be observed in [Ethersquares](https://github.com/ethersquares/ethersquares-contracts/blob/master/contracts/OwnedScoreOracle.sol), a sports betting contract. In this case the owner of the contract acts as an oracle himself. Users are able to verify if the results provided by the owner are correct, with the help of a voting mechanism.
+Another example of an oracle implementation is [Etherisc](https://github.com/etherisc/flightDelay-legacy), which uses Chainlink Oracles to obtain external flight data which is then used as inputs into Flight Delay insurance contracts.
 
 [**< Back**](https://fravoll.github.io/solidity-patterns/)
