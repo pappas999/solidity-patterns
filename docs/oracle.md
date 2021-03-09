@@ -24,7 +24,7 @@ When the request reaches the data source, it is processed and the reply is sent 
 
 ## Implementation
 
-Chainlink oracles have become the preferred oracle solution for smart contracts looking to obtain external data, thanks to their quick and easy implementation, as well as their flexibility & scalability. In this section we'll focus on the implentation of the pattern in the requesting contracts, and leave all of the off-chain logic and processing to a chainlink oracle. Another example of an oracle service is [Town Crier](http://www.town-crier.org/), which also works with trusted compute hardware.
+[Chainlink](http://chain.link/) oracles have become the preferred oracle solution for smart contracts looking to obtain external data, thanks to their quick and easy implementation, as well as their flexibility & scalability. In this section we'll focus on the implentation of the pattern in the requesting contracts, and leave all of the off-chain logic and processing to a chainlink oracle. Another example of an oracle service is [Town Crier](http://www.town-crier.org/), which also works with trusted compute hardware.
 
 To make a simple API request, the requesting contract simply needs to import and implement the ChainlinkClient contract, set a few contructor variables, and then provide a method for requesting data, and one to receive data. The contructor sets the following values:
 1. Sets the LINK token contract to the address of the LINK token for the given network. 
