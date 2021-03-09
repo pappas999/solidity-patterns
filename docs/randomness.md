@@ -1,7 +1,7 @@
 # Randomness
 
 ## Intent
-Generate a random number of a predefined interval in the deterministic environment of a blockchain.
+Generate a verifiable random number in the deterministic environment of a blockchain.
 
 ## Motivation
 Randomness in computer systems and especially in Ethereum is notoriously difficult to achieve. While it is hard or even impossible to generate a truly random number via software, the need for randomness in Ethereum is high. This stems from the fact that a high percentage of smart contracts on the Ethereum blockchain can be classified as games, which often rely on some kind of randomness to determine a winner. The problem with randomness in Ethereum is that Ethereum is a deterministic Turing machine, with no inherent randomness involved. A majority of miners have to obtain the same result when evaluating a transaction to reach consensus. Consensus is one of the pillars of blockchain technology and randomness would imply that mutual agreement between all nodes is impossible. Another problem is the public nature of a blockchain. The internal state of a contract, as well as the entire history of a blockchain, is visible to the public. Therefore, it is difficult to find a secure source of entropy. One of the first sources of randomness in Ethereum that came to mind were block timestamps. The problem with block timestamps is, that they can be influenced by the miner, as long as the timestamp is not older than its parent block. Most of the time the timestamps will be close to correct, but if a miner has an incentive to benefit from wrong timestamps, he could use his mining power, in order to mine his blocks with incorrect timestamps to manipulate the outcome of the random function to his favor.
@@ -53,37 +53,58 @@ The provided sample showcases the implementation of a pseudorandom number genera
 ```Solidity
 // This code has not been professionally audited, therefore I cannot make any promises about
 // safety or correctness. Use at own risk.
-contract Randomness {
+pragma solidity 0.6.6;
 
-    bytes32 sealedSeed;
-    bool seedSet = false;
-    bool betsClosed = false;
-    uint storedBlockNumber;
-    address trustedParty = 0xdCad3a6d3569DF655070DEd06cb7A1b2Ccd1D3AF;
+import "https://raw.githubusercontent.com/smartcontractkit/chainlink/master/evm-contracts/src/v0.6/VRFConsumerBase.sol";
 
-    function setSealedSeed(bytes32 _sealedSeed) public {
-        require(!seedSet);
-        require (msg.sender == trustedParty);
-        betsClosed = true;
-        sealedSeed = _sealedSeed;
-        storedBlockNumber = block.number + 1;
-        seedSet = true;
+contract RandomNumberConsumer is VRFConsumerBase {
+    
+    bytes32 internal keyHash;
+    uint256 internal fee;
+    
+    uint256 public randomResult;
+    
+    /**
+     * Constructor inherits VRFConsumerBase
+     * 
+     * Network: Kovan
+     * Chainlink VRF Coordinator address: 0xdD3782915140c8f3b190B5D67eAc6dc5760C46E9
+     * LINK token address:                0xa36085F69e2889c224210F603D836748e7dC0088
+     * Key Hash: 0x6c3699283bda56ad74f6b855546325b68d482e983852a7a82979cc4807b641f4
+     */
+    constructor() 
+        VRFConsumerBase(
+            0xdD3782915140c8f3b190B5D67eAc6dc5760C46E9, // VRF Coordinator
+            0xa36085F69e2889c224210F603D836748e7dC0088  // LINK Token
+        ) public
+    {
+        keyHash = 0x6c3699283bda56ad74f6b855546325b68d482e983852a7a82979cc4807b641f4;
+        fee = 0.1 * 10 ** 18; // 0.1 LINK
+    }
+    
+    /** 
+     * Requests randomness from a user-provided seed
+     */
+    function getRandomNumber(uint256 userProvidedSeed) public returns (bytes32 requestId) {
+        require(LINK.balanceOf(address(this)) > fee, "Not enough LINK - fill contract with faucet");
+        return requestRandomness(keyHash, fee, userProvidedSeed);
     }
 
-    function bet() public {
-        require(!betsClosed);
-        // Make bets here
+    /**
+     * Callback function used by VRF Coordinator
+     */
+    function fulfillRandomness(bytes32 requestId, uint256 randomness) internal override {
+        randomResult = randomness;
     }
-
-    function reveal(bytes32 _seed) public {
-        require(seedSet);
-        require(betMade);
-        require(storedBlockNumber < block.number);
-        require(keccak256(msg.sender, _seed) == sealedSeed);
-        uint random = uint(keccak256(_seed, blockhash(storedBlockNumber)));
-        // Insert logic for usage of random number here;
-        seedSet = false;
-        betsClosed = false;
+    
+    /**
+     * Withdraw LINK from this contract
+     * 
+     * DO NOT USE THIS IN PRODUCTION AS IT CAN BE CALLED BY ANY ADDRESS.
+     * THIS IS PURELY FOR EXAMPLE PURPOSES.
+     */
+    function withdrawLink() external {
+        require(LINK.transfer(msg.sender, LINK.balanceOf(address(this))), "Unable to transfer");
     }
 }
 ```
